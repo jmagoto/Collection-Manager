@@ -18,3 +18,7 @@
 
 # Ignore RubyMine IDE files
 .idea/
+
+# Ignore movie database files
+db/title.basics.tsv.gz
+db/data.tsv

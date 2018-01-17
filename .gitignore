@@ -19,6 +19,7 @@
 # Ignore RubyMine IDE files
 .idea/
 
-# Ignore movie database files
+# Ignore movie database files -- database should be re-seeded on each machine
 db/title.basics.tsv.gz
 db/data.tsv
+

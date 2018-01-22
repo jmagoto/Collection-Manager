@@ -86,8 +86,33 @@ def compare_movies movie1, movie2
   end
 end
 
-# Reads in the data from a sub tsv file, creates an array of movie objects, sorts it, removes duplicates, and returns it
-def sort_and_remove_duplicates(tsv)
+# Sorts a list of movie objects
+def sort(movies)
+  # Sort the list. The movies will be sorted first by title, then year, then runtime, then genres.
+  movies.sort! { |a, b| compare_movies a, b }
+
+  # Lastly, return the subset of movies
+  movies
+end
+
+# Removes duplicates from the list of movie objects. The list must be sorted before calling this function.
+def remove_duplicates(movies)
+  # Iterate through the list and remove any duplicates -- they should be right next to each other
+  i = 0
+  while i < (movies.length - 1)
+    if compare_movies(movies[i], movies[i+1]) == 0
+      movies.delete_at i
+    else
+      i += 1
+    end
+  end
+
+  # Lastly, return the subset of movies
+  movies
+end
+
+# Reads in the data from a sub tsv file, creates an array of movie objects and returns it
+def read_from_tsv(tsv)
   puts "Thread #{tsv.filepath} is starting:"
   # First read in the data from the file
   movies = Array.new
@@ -103,20 +128,9 @@ def sort_and_remove_duplicates(tsv)
       movies << movie
     end
   end
-  # Now sort the list. The movies will be sorted first by title, then year, then runtime, then genres.
-  movies.sort! { |a, b| compare_movies a, b }
-  # Now iterate through the list and remove any duplicates -- they should be right next to each other
-  i = 0
-  while i < (movies.length - 1)
-    if compare_movies(movies[i], movies[i+1]) == 0
-      movies.delete_at i
-    else
-      i += 1
-    end
-  end
-  puts "Thread #{tsv.filepath} has finished."
-  # Lastly, return the subset of movies
+  # Return the list of movies
   movies
+
 end
 
 # Helper function to merge sets of movies. Uses the merge subroutine from mergesort, along with a check to make sure the
@@ -269,11 +283,22 @@ file_names = split_tsv @data_file_name
 subsets = Array.new
 file_names.each do |file_name|
   tsv = StrictTsv.new file_name
-  subsets << sort_and_remove_duplicates(tsv)
+  subsets << remove_duplicates(sort(read_from_tsv(tsv)))
 end
 
 # Combine all the subsets
-movies = combine_all_subsets subsets
+movies_scraped = combine_all_subsets subsets
+
+# Get a list of all movies currently in the database and sort it
+movies_in_database = Array.new
+Movie.all.each do |movie|
+  movies_in_database << movie
+end
+movies_in_database = sort movies_in_database
+
+puts "Number of movies scraped: #{movies_scraped.length}"
+puts "Number of movies already in database: #{movies_in_database.length}"
+
 
 # Create the tsv object and parse the file into the database.
 #tsv = StrictTsv.new @data_file_name

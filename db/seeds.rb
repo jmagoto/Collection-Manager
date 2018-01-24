@@ -113,7 +113,6 @@ end
 
 # Reads in the data from a sub tsv file, creates an array of movie objects and returns it
 def read_from_tsv(tsv)
-  puts "Thread #{tsv.filepath} is starting:"
   # First read in the data from the file
   movies = Array.new
   tsv.parse do |row|
@@ -177,18 +176,16 @@ def combine_all_subsets(subsets)
   subsets.delete_if {|subset| subset.length == 0}
 
   # Print some useful information to the user
-  puts 'Now merging the subsets.'
   sum = 0
   subsets.each do |set|
-    puts 'set empty' if set.length == 0
     sum += set.length
   end
   puts "Total number of movies before merging sets: #{sum}"
   puts "Total number of subsets of movies before merging sets: #{subsets.length}"
+  puts 'Now merging the subsets.'
 
   # Merge all of the subsets into one subset
   while subsets.length > 1
-    puts 'Launching one iteration of merging.'
     temp = Array.new
     # If there is an odd number of subsets, pull one out
     if subsets.length % 2 == 1
@@ -213,32 +210,31 @@ def combine_all_subsets(subsets)
   subsets[0]
 end
 
-# Helper function to parse a tsv file line by line into the movies table of the database.
-def parse_tsv_into_database(tsv)
-
-
-
-
-  i = 1
-  movies_to_import = Array.new
-  puts 'Populating the database with the movies. This may take a while...'
-  puts 'Starting at ' + DateTime.now.rfc3339
-  tsv.parse do |row|
-    # Check the conditions before adding to the database. That is, ensure that the entry is A. a movie, and B. not an adult film
-    if row[@tsv_columns[:type]] == "movie" && row[@tsv_columns[:adult]] == '0'
-      # Store the information about the movie into a movie object, and add it to the array to be later imported
-      movie = Movie.new
-      movie.title = row[@tsv_columns[:title]]
-      movie.year = row[@tsv_columns[:year]]
-      movie.runtime = row[@tsv_columns[:runtime]]
-      movie.genres = row[@tsv_columns[:genres]].chomp
-      movies_to_import << movie
-      puts 'Prepared movie number ' + i.to_s
-      i = i + 1
+# Traverse the two sets and return an array of movies that are contained in set1 and not contained in set2.
+# Both lists must be sorted before calling this function.
+def difference_of_sets(set1, set2)
+  i = 0
+  j = 0
+  result = Array.new
+  # Iterate through the list, not adding elements to the result if they are also found in the second list
+  while i < set1.length && j < set2.length
+    test = compare_movies(set1[i], set2[j])
+    if test == 0
+      i += 1
+      j += 1
+    elsif test == -1
+      result << set1[i]
+      i += 1
+    else
+      j += 1
     end
   end
-  puts 'Finished preparing the movies. Now adding the movies to the database.'
-  Movie.import movies_to_import
+  while i < set1.length
+    result << set1[i]
+    i += 1
+  end
+  # Return the result
+  result
 end
 
 # Variables
@@ -256,25 +252,24 @@ end
 
 # Check if the files already exist. If so, delete it and redownload -- we want the most recent version.
 File.delete@archive_file_name if File.file? @archive_file_name
-#File.delete @data_file_name if File.file? @data_file_name
+File.delete @data_file_name if File.file? @data_file_name
 
 # Download the file, printing status messages before and after
-# puts 'Downloading the movie database archive. This may take a few minutes.'
-# #File.write @archive_file_name, open(@url).read
-# agent = Mechanize.new
-# agent.pluggable_parser.default = Mechanize::Download
-# agent.get(@url).save(@archive_file_name)
-# puts 'Finished downloading the movie database archive.'
-#
-# # Unzip the downloaded file
-# puts 'Extracting the archive.'
-# output_file = File.open(@data_file_name, 'w')
-# gz_extract = Zlib::GzipReader.open(@archive_file_name)
-# gz_extract.each_line do |extract|
-#   output_file.write(extract)
-# end
-# output_file.close
-# puts 'Finished extracting the archive.'
+puts 'Downloading the movie database archive. This may take a few minutes.'
+agent = Mechanize.new
+agent.pluggable_parser.default = Mechanize::Download
+agent.get(@url).save(@archive_file_name)
+puts 'Finished downloading the movie database archive.'
+
+# Unzip the downloaded file
+puts 'Extracting the archive.'
+output_file = File.open(@data_file_name, 'w')
+gz_extract = Zlib::GzipReader.open(@archive_file_name)
+gz_extract.each_line do |extract|
+  output_file.write(extract)
+end
+output_file.close
+puts 'Finished extracting the archive.'
 
 # Split the tsv file and get the names of the separate files
 file_names = split_tsv @data_file_name
@@ -296,13 +291,19 @@ Movie.all.each do |movie|
 end
 movies_in_database = sort movies_in_database
 
-puts "Number of movies scraped: #{movies_scraped.length}"
-puts "Number of movies already in database: #{movies_in_database.length}"
+# Add new movies to the database
+puts 'Adding new movies to the database.'
+movies_to_import = difference_of_sets(movies_scraped, movies_in_database)
+Movie.import movies_to_import if movies_to_import.length > 0
+puts "Added #{movies_to_import.length} movies to the database."
 
-
-# Create the tsv object and parse the file into the database.
-#tsv = StrictTsv.new @data_file_name
-#parse_tsv_into_database tsv
+# Remove movies that are no longer found in the imdb database
+puts 'Removing movies that are no longer listed by imdb from the database.'
+movies_to_remove = difference_of_sets(movies_in_database, movies_scraped)
+movies_to_remove.each do |movie|
+  movie.delete
+end
+puts "Removed #{movies_to_remove.length} from the database."
 
 # Alert the user that the database population is finished.
 puts 'Finished populating the film database.'
@@ -310,4 +311,7 @@ puts 'Finished at ' + DateTime.now.rfc3339
 
 # Cleanup -- delete the now unnecessary archive/data files
 File.delete@archive_file_name if File.file? @archive_file_name
-#File.delete @data_file_name if File.file? @data_file_name
+File.delete @data_file_name if File.file? @data_file_name
+file_names.each do |file_name|
+  File.delete file_name if File.file? file_name
+end
